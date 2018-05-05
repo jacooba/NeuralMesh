@@ -1,0 +1,5 @@
+__pycache__
+*.pyc
+Summaries/
+TFModel/
+MNIST_data/
