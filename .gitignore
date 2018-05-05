@@ -3,3 +3,4 @@ __pycache__
 Summaries/
 TFModel/
 MNIST_data/
+.DS_Store
