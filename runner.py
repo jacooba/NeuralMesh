@@ -103,8 +103,38 @@ class Runner:
         plt.legend()
         plt.show()
 
+    def benchmark_FF_SGD_plot(self):
+        #lengths = [2, 5, 10, 20, 35]
+        lengths = [2, 5, 10, 20, 25]
+        #lengths = [90, 95, 105]
+        num_neurons = [l**2 for l in lengths]
+
+        sgd_accuracies = []
+        gd_accuracies = []
+
+        for length in lengths:
+            ff_SGD = FeedForward(length**2, stochastic=True)
+            ff_SGD.train(self.trainImagesLabelsTup)
+            sgd_accuracies.append(ff_SGD.test(self.testImagesLabelsTup))
+
+            tf.reset_default_graph()
+
+            ff_GD = FeedForward(length**2, stochastic=False)
+            ff_GD.train(self.trainImagesLabelsTup)
+            gd_accuracies.append(ff_GD.test(self.testImagesLabelsTup))
+
+            tf.reset_default_graph()
+
+        plt.plot(num_neurons, sgd_accuracies, '-b', label="FF SGD")
+        plt.plot(num_neurons, gd_accuracies, '-r', label="FF GD")
+        plt.title("Model Accuracy by Neuron")
+        plt.xlabel("number of neurons")
+        plt.ylabel('accuracy')
+        plt.legend()
+        plt.show()
+
     def window_plot(self):
-        szs = [1, 2, 4, 8, 15, 25]
+        szs = [1, 5, 10, 25, 100]
         mesh_accuracies = []
         for sz in szs:
             #hard coded to 25x25 so it fits in mem
@@ -196,7 +226,11 @@ def main():
        runner = Runner()
 
     if bench:
+        print("comparing SGD to GD for FF")
+        runner.benchmark_FF_SGD_plot()
+        print("making benchmark plot...")
         runner.benchmark_plot()
+        print("making windows plot")
         runner.window_plot()
     if train:
         runner.train()

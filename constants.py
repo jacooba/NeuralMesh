@@ -27,7 +27,7 @@ ALL_SUMMARY_FILES = os.path.join(SUMMARY_DIR,"*")
 MODEL_PATH_PREFIX = os.path.join(MODEL_DIR,MODEL_NAME) #tensorflow will add something to the end of this path 
 
 #10 default 
-WINDOW_SZ = 25 #25 #10  size: 1-(97.1,92.6) 2-(97.6,92.9) 3-(97.2,92.6) 4-(97.5,92.8) 8-(97.8,93.0)
+WINDOW_SZ = 25 #100 #25 #10  size: 1-(97.1,92.6) 2-(97.6,92.9) 3-(97.2,92.6) 4-(97.5,92.8) 8-(97.8,93.0)
 #only config that gets better with window size is all set to false!!!
 IMG_VEC_SZ = 784 #number of pixel values (greyscale). Pixels will be in flattened array.
 
@@ -43,17 +43,38 @@ START_E = 0.0 #the neuron values at the start
 TRAINABLE_INIT_STATE = False #learn an additional amount of energy to start each neuron
 
 #right now, fixed batch size, for GD. 10k for both deault
-NUM_TRAIN_IMGS = 10000 #250 #2500 #10000 #there are 60,000 total... although keras kills processes when do 60,000?
-NUM_TEST_IMGS = 10000 #250 #2500 #10000 #there are 10,000. MUST DIVIDE the batch size evenly! (we need to use up a whole batch)
-BATCH_SZ = NUM_TRAIN_IMGS
+NUM_TRAIN_IMGS = 10000 #250 #2500 #10000 #there are 60,000 total but I consider *10k* to be full data since its plent.
+NUM_TEST_IMGS = 10000 #250 #2500 #10000 
 #NOTE: interesting that neural mesh (large window size without clip) does better when they both few neurons (especially if little data)
 #e.g. mesh of size 1000x4x4 with 250 train and test got (0.376, 0.348) vs benchmark-(0.3, 0.236).. but can't get more than that. takes too long.
 #and WITH clip, with medium data, it does better when there are tons of neurons (4x105x105). 87.24 vs 87.05% test accuracy.
+STOCHASTIC_GD = True 
+if STOCHASTIC_GD:
+    #in this case, batch size must divide NUM_TRAIN_IMGS and NUM_TEST_IMGS
+    BATCH_SZ = 2500
+    #try benchmark but with way larger window size?
+else:
+    #in this case, NUM_TEST_IMGS, MUST DIVIDE the batch size evenly! (we need to use up a whole batch)
+    BATCH_SZ = NUM_TRAIN_IMGS
+BENCHMARK_STOCHASTIC = True #wehther benchmark FF model is stochastic (leave false since non-SGD does better here)???
+#stochastic actually seems to be doing better? will benchmark in a sec, but:
+#with batch_sz = 2500, acc = (97.52,  93.619996) and only 30 epoch
+#I have energy plot of above
+#... turned out, yes, Mesh is better than FF, at least when it is SGD and FF is GD and 30 epoch
+# as for both SGD...
+#... ahh shit, SGD is better for both... redoing benchmarks
+# SGD better becuae it allows for more steps of same learning rate in same amount of time. (and you dont need to be that confideng of lr sometimes)
+# it lets you do more steps or have smaller learning rate in same amount of time
+# really just faster
+#OK, so with window size = 100 and SGD, Nueral mesh does get better for large neurons (like 25^2)!!
+# but I think this was opposite with regular GD (in that NM was better with few neurons and little data)
+#... will need to confirm on GD plots... may just be *coincidence*
+
 
 #50 is default
-NUM_EPOCHS = 50 #50 #100
-SUMMARY_FREQ = 2
-SAVE_FREQ = 10
+NUM_EPOCHS = 30 #50 #100
+SUMMARY_FREQ = 10 #in epochs
+SAVE_FREQ = 25
 
 
 USE_INPUT_AS_RESIDUAL = False #whether the window should keep looking at the orinigal image seen.

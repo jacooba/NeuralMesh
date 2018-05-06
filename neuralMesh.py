@@ -170,8 +170,9 @@ class NeuralMesh:
         self.accuracy = tf.reduce_mean(tf.cast(tf.equal(self.preds, self.labels), tf.float32))
 
         if self.saveable:
-            self.train_loss_summary = tf.summary.scalar('train_loss', self.loss)
-            self.test_loss_summary = tf.summary.scalar('test_loss', self.loss)
+            self.train_loss_summary = tf.summary.scalar('train_accuracy', self.accuracy)
+            # self.test_loss_summary = tf.summary.scalar('test_accuracy', self.accuracy)
+            # currently making my own summary for this so i can run it stochastically
 
     def safe_absolute_tensor(self, tensor):
         if c.ABS_APPROX:
@@ -195,70 +196,116 @@ class NeuralMesh:
 
         #prep data
         windowsArr, labelAnsArr = self.extractWindowsAndLabels(trainImagesLabelsTup)
-        #prep val data
-        if valImagesLabelsTup:
-            valImages, valLabels = valImagesLabelsTup
-            valImages, valLabels = np.repeat(valImages, int(c.BATCH_SZ/c.NUM_TEST_IMGS), axis=0), np.repeat(valLabels, int(c.BATCH_SZ/c.NUM_TEST_IMGS)) #hack to fit in batch size
-            valWindows, valLabel = self.extractWindowsAndLabels(valImagesLabelsTup)
+        #prep val data (done at test time now)
+        # if valImagesLabelsTup:
+        #     valImages, valLabels = valImagesLabelsTup
+        #     valImages, valLabels = np.repeat(valImages, int(c.BATCH_SZ/c.NUM_TEST_IMGS), axis=0), np.repeat(valLabels, int(c.BATCH_SZ/c.NUM_TEST_IMGS)) #hack to fit in batch size
+        #     valWindows, valLabel = self.extractWindowsAndLabels(valImagesLabelsTup)
 
         #train
+        step = 0
+        num_batches_per_e = int(c.NUM_TRAIN_IMGS/c.BATCH_SZ)
+        num_steps = num_batches_per_e*c.NUM_EPOCHS
         for epoch in range(c.NUM_EPOCHS):
-            step = epoch
-            #catch up to saved state if resuming training. (dont do anything if step/epoch is too early)
-            if step < tf.train.global_step(self.sess, self.glob_step):
-                continue
+            if c.STOCHASTIC_GD:#shuffle data
+                permutation = np.random.permutation(len(labelAnsArr))
+                windowsArr, labelAnsArr = windowsArr[permutation], labelAnsArr[permutation]
+            
+            # Begin Epoch Train #
+            for b_num in range(num_batches_per_e):
+                if step < tf.train.global_step(self.sess, self.glob_step):
+                    #catch up to saved state if resuming training. (dont do anything if step/epoch is too early)
+                    step += 1
+                    continue
 
-            print("\nTrain Batch (Epoch):", step)
+                if c.STOCHASTIC_GD:
+                    print("\nTrain Step:", step)
+                else:
+                    print("\nTrain Step (Epoch):", step)
+                print(100.0*step/num_steps, "percent done")
 
-            feedDict = {self.img_batch_in: windowsArr, self.labels: labelAnsArr}
-            if self.saveable:
-                sessArgs = [self.accuracy, self.loss, self.train_loss_summary, self.trainOp]
-                acc, lossReturned, summary, _ = self.sess.run(sessArgs, feed_dict=feedDict)
-            else:
-                sessArgs = [self.accuracy, self.loss, self.trainOp]
-                acc, lossReturned, _ = self.sess.run(sessArgs, feed_dict=feedDict)
+                start_index = c.BATCH_SZ*b_num
+                stop_index = start_index + c.BATCH_SZ
+                data, labels = windowsArr[start_index:stop_index], labelAnsArr[start_index:stop_index]
 
-            print("loss -", lossReturned)
-            print("accuracy -", acc)
+                feedDict = {self.img_batch_in: data, self.labels: labels}
+                if self.saveable:
+                    sessArgs = [self.accuracy, self.loss, self.train_loss_summary, self.trainOp]
+                    acc, lossReturned, summary, _ = self.sess.run(sessArgs, feed_dict=feedDict)
+                else:
+                    sessArgs = [self.accuracy, self.loss, self.trainOp]
+                    acc, lossReturned, _ = self.sess.run(sessArgs, feed_dict=feedDict)
+
+                print("loss -", lossReturned)
+                print("accuracy -", acc)
+
+                step += 1
+            # End Epoch Train #
 
             #save model/summary and validate
-            if self.saveable:
-                if (step%c.SAVE_FREQ == 0) or (step==c.NUM_EPOCHS-1):
+            if self.saveable and step >= tf.train.global_step(self.sess, self.glob_step):
+                if (epoch%c.SAVE_FREQ == 0) or (epoch==c.NUM_EPOCHS-1):
                     self.save()
-                if (step%c.SUMMARY_FREQ == 0) or (step==c.NUM_EPOCHS-1):
+                if (epoch%c.SUMMARY_FREQ == 0) or (epoch==c.NUM_EPOCHS-1):
+                    #note, this train summary is currently only for the last batch
                     self.summary_writer.add_summary(summary, global_step=step)
                     if valImagesLabelsTup:
                         print("\n\nvalidating...")
-                        feedDict = {self.img_batch_in: valWindows, self.labels: valLabel}
-                        acc, valSummary = self.sess.run([self.accuracy, self.test_loss_summary], feed_dict=feedDict)
+                        # feedDict = {self.img_batch_in: valWindows, self.labels: valLabel}
+                        # acc, valSummary = self.sess.run([self.accuracy, self.test_loss_summary], feed_dict=feedDict)
+                        val_acc = self.test(valImagesLabelsTup, verbose=False)
+                        valSummary = tf.Summary(value=[tf.Summary.Value(tag="test_accuracy", simple_value=val_acc)])
                         self.summary_writer.add_summary(valSummary, global_step=step)
-                        print("val accuracy::", acc, "\n\n")
+                        print("val accuracy::", val_acc, "\n\n")
 
 
 
-    def test(self, testImagesLabelsTup, display_energy_num=0):
-        #prep data. repeat data enough to fill batch (hack)
-        images, labels = testImagesLabelsTup
-        images, labels = np.repeat(images, int(c.BATCH_SZ/c.NUM_TEST_IMGS), axis=0), np.repeat(labels, int(c.BATCH_SZ/c.NUM_TEST_IMGS))
-        windowsArr, labelAnsArr = self.extractWindowsAndLabels(testImagesLabelsTup)
+    def test(self, testImagesLabelsTup, display_energy_num=0, verbose=True):
+        if not c.STOCHASTIC_GD:
+            #prep data. repeat data enough to fill batch (hack)
+            images, labels = testImagesLabelsTup
+            images, labels = np.repeat(images, int(c.BATCH_SZ/c.NUM_TEST_IMGS), axis=0), np.repeat(labels, int(c.BATCH_SZ/c.NUM_TEST_IMGS))
+            windowsArr, labelAnsArr = self.extractWindowsAndLabels((images, labels))
+            feedDict = {self.img_batch_in: windowsArr, self.labels: labelAnsArr}
+            if not display_energy_num:
+                sessArgs = [self.accuracy, self.loss]
+                acc, lossReturned = self.sess.run(sessArgs, feed_dict=feedDict)
+            else:
+                sessArgs = [self.accuracy, self.loss, self.all_states]
+                acc, lossReturned, all_states = self.sess.run(sessArgs, feed_dict=feedDict)
 
-        feedDict = {self.img_batch_in: windowsArr, self.labels: labelAnsArr}
+        if c.STOCHASTIC_GD:
+            accuracies = []
+            losses = []
+            all_states_list = []
+            windowsArr, labelAnsArr = self.extractWindowsAndLabels(testImagesLabelsTup)
+            for step in range(int(c.NUM_TEST_IMGS/c.BATCH_SZ)):
+                start_index = c.BATCH_SZ*step
+                stop_index = start_index + c.BATCH_SZ
+                data, labels = windowsArr[start_index:stop_index], labelAnsArr[start_index:stop_index]
+                feedDict = {self.img_batch_in: data, self.labels: labels}
+                if len(all_states_list) >= display_energy_num: # dont need more windows to display
+                    sessArgs = [self.accuracy, self.loss]
+                    batch_accuracy, batch_loss = self.sess.run(sessArgs, feed_dict=feedDict)
+                else:
+                    sessArgs = [self.accuracy, self.loss, self.all_states]
+                    batch_accuracy, batch_loss, batch_all_states = self.sess.run(sessArgs, feed_dict=feedDict)  
+                    all_states_list.extend(batch_all_states)
+                accuracies.append(batch_accuracy)
+                losses.append(batch_loss)
+            acc = np.mean(np.array(accuracies))
+            lossReturned = np.mean(np.array(losses))
+            all_states = np.array(all_states_list)
 
-        if not display_energy_num:
+        if verbose:
+            print("TEST loss -", lossReturned)
+            print("TEST accuracy -", acc)
 
-            # RUN
-            sessArgs = [self.accuracy, self.loss]
-            acc, lossReturned = self.sess.run(sessArgs, feed_dict=feedDict)
-
-        else: #display energy motion
-
-            # RUN
-            sessArgs = [self.accuracy, self.loss, self.all_states]
-            acc, lossReturned, all_states = self.sess.run(sessArgs, feed_dict=feedDict)
-
+        if display_energy_num: #display energy motion
             #[display_energy_num, window_sz, rows, cols]
             windows_of_interest = all_states[:display_energy_num,:,:,:]
-            # assert windows_of_interest.shape == (display_energy_num, self.window_sz, c.MESH_ROWS, c.MESH_COLS)
+            # print(windows_of_interest.shape)
+            # assert windows_of_interest.shape == (display_energy_num, self.window_sz+1, c.MESH_ROWS, c.MESH_COLS)
             n, w, _, _ = windows_of_interest.shape
 
             print("Energies for labels:", testImagesLabelsTup[1][:display_energy_num])
@@ -279,8 +326,6 @@ class NeuralMesh:
             # plt.ylabel("Window Number")
             plt.show()
 
-        print("TEST loss -", lossReturned)
-        print("TEST accuracy -", acc)
         return acc
 
 
