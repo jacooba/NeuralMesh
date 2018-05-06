@@ -59,7 +59,8 @@ SAVE_FREQ = 10
 USE_INPUT_AS_RESIDUAL = False #whether the window should keep looking at the orinigal image seen.
 RESIDUAL_VEC = [0.0 for _ in range(IMG_VEC_SZ)] #if ^^^ is false, the inputs seen by the mesh for all the windows after the first
 
-#with 100 epoch and 20x20 and window 10 (not deaults)
+#defualt for this these architectural params / booleans is ALL FALSE!
+# ***they were chosen / tuned, however, with 100 epoch and 20x20 and window 10 [10x20x20] (not deault values for those params!)
 #all false works wonders like (94, 92)! -> max(97,94)-pic, bias(94,92), maxbias(96,94)
 #norm, clip, deplete all together doesnt work (this is what i really want)
 #norm and clip doesnt work
