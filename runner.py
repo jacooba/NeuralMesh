@@ -61,27 +61,29 @@ class Runner:
 
     def train(self):
         if not self.model:
-            self.model = NeuralMesh(c.MESH_ROWS, c.MESH_COLS)
+            self.model = NeuralMesh()
         #train
         print("\nTRAINING...")
         self.model.train(self.trainImagesLabelsTup, self.testImagesLabelsTup)
 
     def test(self, display_energy_num=0):
         if not self.model:
-            self.model = NeuralMesh(c.MESH_ROWS, c.MESH_COLS)
+            self.model = NeuralMesh()
         #test
         print("\nTESTING...")
         self.model.test(self.testImagesLabelsTup, display_energy_num)
 
     def benchmark_plot(self):
-        lengths = [2, 5]
+        #lengths = [2, 5, 10, 20, 35]
+        lengths = [2, 5, 10, 20, 25]
+        #lengths = [90, 95, 105]
         num_neurons = [l**2 for l in lengths]
 
         mesh_accuracies = []
         ff_accuracies = []
 
         for length in lengths:
-            mesh = NeuralMesh(length, length, saveable=False)
+            mesh = NeuralMesh(mesh_rows=length, mesh_cols=length, saveable=False)
             mesh.train(self.trainImagesLabelsTup)
             mesh_accuracies.append(mesh.test(self.testImagesLabelsTup))
 
@@ -100,6 +102,21 @@ class Runner:
         plt.ylabel('accuracy')
         plt.legend()
         plt.show()
+
+    def window_plot(self):
+        szs = [1, 2, 4, 8, 15, 25]
+        mesh_accuracies = []
+        for sz in szs:
+            #hard coded to 25x25 so it fits in mem
+            mesh = NeuralMesh(mesh_rows=25, mesh_cols=25, window_sz=sz, saveable=False)
+            mesh.train(self.trainImagesLabelsTup)
+            mesh_accuracies.append(mesh.test(self.testImagesLabelsTup))
+            tf.reset_default_graph()
+        plt.plot(szs, mesh_accuracies, '-b')
+        plt.title("Mesh Accuracy by Window Size")
+        plt.xlabel("window size")
+        plt.show()
+
 
 
 
@@ -180,6 +197,7 @@ def main():
 
     if bench:
         runner.benchmark_plot()
+        runner.window_plot()
     if train:
         runner.train()
     if test or energy:

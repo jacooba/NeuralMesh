@@ -8,14 +8,16 @@ import tensorflow as tf
 import numpy as np
 
 import matplotlib.pyplot as plt
+import matplotlib.colors as colors
 
 
 #Neural net: 
 # recurrent network where values can only be transfered to adjacent neurons and energy is conserved
 # since it can wrap arround, the mesh is really in the shape of a taurus
 class NeuralMesh:
-    def __init__(self, mesh_rows, mesh_cols, saveable=True):
+    def __init__(self, mesh_rows=c.MESH_ROWS, mesh_cols=c.MESH_COLS, window_sz=c.WINDOW_SZ, saveable=True):
         self.mesh_rows, self.mesh_cols = mesh_rows, mesh_cols
+        self.window_sz = window_sz
         self.saveable = saveable
 
         self.sess = tf.Session()
@@ -40,7 +42,7 @@ class NeuralMesh:
             self.initializer = tf.random_uniform_initializer()
         else:
             self.initializer = tf.random_normal_initializer(stddev=0.1)
-        self.img_batch_in = tf.placeholder(tf.float32, shape=[c.BATCH_SZ, c.WINDOW_SZ, c.IMG_VEC_SZ]) #None is batch_sz
+        self.img_batch_in = tf.placeholder(tf.float32, shape=[c.BATCH_SZ, self.window_sz, c.IMG_VEC_SZ]) #None is batch_sz
         self.labels = tf.placeholder(tf.int64, shape=[c.BATCH_SZ])
 
         #can use code bellow to get baseline =  shallow fully connected network:
@@ -55,7 +57,10 @@ class NeuralMesh:
 
         #starting state for network
         #cur_state = tf.Variable(tf.zeros([self.mesh_rows, self.mesh_cols], dtype=tf.float32), trainable=c.TRAINABLE_INIT_STATE) #for trainable first state????
-        cur_state = tf.get_variable("STATE", dtype=tf.float32, shape=[c.BATCH_SZ, self.mesh_rows, self.mesh_cols], initializer=tf.zeros_initializer(dtype=tf.float32))
+        cur_state = c.START_E*tf.ones([c.BATCH_SZ, self.mesh_rows, self.mesh_cols])
+        #cur_state = tf.get_variable("STATE", dtype=tf.float32, shape=[self.mesh_rows, self.mesh_cols], initializer=tf.zeros_initializer(dtype=tf.float32))
+        if c.TRAINABLE_INIT_STATE:
+            cur_state = cur_state + tf.get_variable("STATE", dtype=tf.float32, shape=[self.mesh_rows, self.mesh_cols], initializer=self.initializer)
 
         weights_in = tf.get_variable("W_IN", dtype=tf.float32, shape=[self.mesh_rows, self.mesh_cols, c.IMG_VEC_SZ], initializer=self.initializer)
         if c.BIAS_ON_INPUT:
@@ -77,23 +82,23 @@ class NeuralMesh:
 
         #define recurrent network
         all_states_lists = [cur_state]
-        for i in range(c.WINDOW_SZ):    
+        for i in range(self.window_sz):    
             curr_batch_input = self.img_batch_in[:,i,:] #get the input for this window
             #state_batch_reset = tf.nn.relu(cur_state) if c.MAX_TO_0_EACH_STEP else cur_state #reset the energies of the previous state. (introduce E b/c energy goes down when used for inhibition)
             state_batch_in = tf.tensordot(curr_batch_input, weights_in, axes=([1],[2])) #dense layer to state input
             if c.BIAS_ON_INPUT:
-                state_batch_in += biases_in
+                state_batch_in = state_batch_in + biases_in
             if c.CLIP_NEURONS_TO_NEG1_AND_1: #state_batch in never needs to be > 2 or <-2 in this case
                 state_batch_in = 2.0*tf.nn.tanh(state_batch_in)
 
             
             cur_state = tf.nn.relu(cur_state) if c.MAX_TO_0_EACH_STEP else cur_state #reset energries if necessary
-            cur_state += state_batch_in #new state given input E
+            cur_state = cur_state + state_batch_in #new state given input E
             cur_state = self.clip_neurons(cur_state) if c.CLIP_NEURONS_TO_NEG1_AND_1 else cur_state #clip if necessary
 
             state_batch_to_fire = tf.nn.relu(cur_state) #only fire if E>0 (after new energy)
             if c.DEPLETE_TO_NEG_1: #give it the additional energey it deserves to deplete to -1
-                state_batch_to_fire = safe_add_1_where_pos(state_batch_to_fire) #can use [-1,0] energy to fire as well (if >0)
+                state_batch_to_fire = self.safe_add_1_where_pos(state_batch_to_fire) #can use [-1,0] energy to fire as well (if >0)
 
             to_shift_D = tf.multiply(W_D, state_batch_to_fire)
             to_shift_U = tf.multiply(W_U, state_batch_to_fire)
@@ -141,8 +146,11 @@ class NeuralMesh:
         #state was [batch_sz, rows, cols]
         #should npow be [batch_sz, window_sz, row, cols]
         self.all_states = tf.stack(all_states_lists, axis=1)
-        if not c.CLIP_NEURONS_TO_NEG1_AND_1:
-            self.all_states = tf.nn.sigmoid(self.all_states)
+        if c.CLIP_NEURONS_TO_NEG1_AND_1:
+            self.all_states = (self.all_states+1.0)*0.5
+        else:
+            if c.MANNUAL_SIGMOID_FOR_DISPLAY:
+                self.all_states = tf.nn.sigmoid(self.all_states)
 
 
         #state -> logits
@@ -186,12 +194,12 @@ class NeuralMesh:
     def train(self, trainImagesLabelsTup, valImagesLabelsTup=None):
 
         #prep data
-        windowsArr, labelAnsArr = extractWindowsAndLabels(trainImagesLabelsTup)
+        windowsArr, labelAnsArr = self.extractWindowsAndLabels(trainImagesLabelsTup)
         #prep val data
         if valImagesLabelsTup:
             valImages, valLabels = valImagesLabelsTup
             valImages, valLabels = np.repeat(valImages, int(c.BATCH_SZ/c.NUM_TEST_IMGS), axis=0), np.repeat(valLabels, int(c.BATCH_SZ/c.NUM_TEST_IMGS)) #hack to fit in batch size
-            valWindows, valLabel = extractWindowsAndLabels(valImagesLabelsTup)
+            valWindows, valLabel = self.extractWindowsAndLabels(valImagesLabelsTup)
 
         #train
         for epoch in range(c.NUM_EPOCHS):
@@ -232,7 +240,7 @@ class NeuralMesh:
         #prep data. repeat data enough to fill batch (hack)
         images, labels = testImagesLabelsTup
         images, labels = np.repeat(images, int(c.BATCH_SZ/c.NUM_TEST_IMGS), axis=0), np.repeat(labels, int(c.BATCH_SZ/c.NUM_TEST_IMGS))
-        windowsArr, labelAnsArr = extractWindowsAndLabels(testImagesLabelsTup)
+        windowsArr, labelAnsArr = self.extractWindowsAndLabels(testImagesLabelsTup)
 
         feedDict = {self.img_batch_in: windowsArr, self.labels: labelAnsArr}
 
@@ -250,7 +258,7 @@ class NeuralMesh:
 
             #[display_energy_num, window_sz, rows, cols]
             windows_of_interest = all_states[:display_energy_num,:,:,:]
-            # assert windows_of_interest.shape == (display_energy_num, c.WINDOW_SZ, c.MESH_ROWS, c.MESH_COLS)
+            # assert windows_of_interest.shape == (display_energy_num, self.window_sz, c.MESH_ROWS, c.MESH_COLS)
             n, w, _, _ = windows_of_interest.shape
 
             print("Energies for labels:", testImagesLabelsTup[1][:display_energy_num])
@@ -258,7 +266,10 @@ class NeuralMesh:
             for window_num in range(n): 
                 for state_num in range(w):
                     subplot = plots_array[window_num][state_num]
-                    subplot.imshow(windows_of_interest[window_num][state_num][:,:], cmap='inferno')
+                    if c.IMSHOW_NORM_FOR_DISPLAY:
+                        subplot.imshow(windows_of_interest[window_num][state_num][:,:], cmap='inferno')
+                    else:
+                        subplot.imshow(windows_of_interest[window_num][state_num][:,:], cmap='inferno', norm=colors.NoNorm())
                     subplot.axis('off')
                     # plt.subplot(n, w, window_num * w + state_num + 1)
                     # plt.imshow(windows_of_interest[window_num][state_num][:,:], cmap='inferno')
@@ -273,20 +284,20 @@ class NeuralMesh:
         return acc
 
 
-#takes in a batch of images [[img],[img],...] and returns [[window],[window],...], where the window starts with the img
-def windowifyImgBatch(images):
-    windows = []
-    for imgVec in images:
-        vecToBroadcast = imgVec if c.USE_INPUT_AS_RESIDUAL else c.RESIDUAL_VEC
-        window = [imgVec] + [vecToBroadcast for _ in range(c.WINDOW_SZ - 1)]
-        windows.append(window)
-    return windows
+    #takes in a batch of images [[img],[img],...] and returns [[window],[window],...], where the window starts with the img
+    def windowifyImgBatch(self, images):
+        windows = []
+        for imgVec in images:
+            vecToBroadcast = imgVec if c.USE_INPUT_AS_RESIDUAL else c.RESIDUAL_VEC
+            window = [imgVec] + [vecToBroadcast for _ in range(self.window_sz - 1)]
+            windows.append(window)
+        return windows
 
-#unzips the tuples, makes windows, and converts to numpy array
-def extractWindowsAndLabels(imagesLabelsTup):
-    images = imagesLabelsTup[0]
-    labelAns = imagesLabelsTup[1]
-    windows = windowifyImgBatch(images)
-    return np.array(windows), np.array(labelAns)
+    #unzips the tuples, makes windows, and converts to numpy array
+    def extractWindowsAndLabels(self, imagesLabelsTup):
+        images = imagesLabelsTup[0]
+        labelAns = imagesLabelsTup[1]
+        windows = self.windowifyImgBatch(images)
+        return np.array(windows), np.array(labelAns)
 
 
