@@ -100,6 +100,10 @@ BIAS_ON_INPUT = False
 DEPLETE_TO_NEG_1 = False #allows depleteion down to -1. (not rewuried unless norm weights)
 #HARD_DEPLETE_TO_NEG_1 = False #...dont know how to do this...: if above is set, this will force depelete to actually go all the way to -1, but will lose some energy to friction (see note at top)
 #actaully fine... assert not (DEPLETE_TO_NEG_1 and (MAX_TO_0_EACH_STEP or not NORMALIZE_WEIGHTS)) #it cannot be the case that you deplete to neg1 and yet are maxing to 0 or not norming weights
+BIAS_EVERY_STEP = USE_INPUT_AS_RESIDUAL #bias should probably only be added at first step if no residual
+#using SGD defaults without bias - test accuracies: 93.06, 93.69, 93.15 =>mean = 93.30
+#using SGD defaults with bias - test accuracies: 92.77, 93.77, 93.18 => mean = 93.24
+
 
 ABS_APPROX = True #whether to approx absolute value to a more differentiable approximation: abs val: sqrt(square(x)+EPS^2) - EPS
 EPS = 0.0001 #the eps used in computing the differentiabl approx of functions (abs and division)

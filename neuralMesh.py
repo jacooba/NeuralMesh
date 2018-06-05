@@ -86,7 +86,7 @@ class NeuralMesh:
             curr_batch_input = self.img_batch_in[:,i,:] #get the input for this window
             
             state_batch_in = tf.tensordot(curr_batch_input, weights_in, axes=([1],[2])) #dense layer to state input
-            if c.BIAS_ON_INPUT:
+            if c.BIAS_ON_INPUT and (c.BIAS_EVERY_STEP or i==0): #add bias if we should. add to first step or every step if we should.
                 state_batch_in = state_batch_in + biases_in
             if c.CLIP_NEURONS_TO_NEG1_AND_1: #state_batch in never needs to be > 2 or <-2 in this case
                 state_batch_in = 2.0*tf.nn.tanh(state_batch_in)
