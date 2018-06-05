@@ -84,13 +84,12 @@ class NeuralMesh:
         all_states_lists = [cur_state]
         for i in range(self.window_sz):    
             curr_batch_input = self.img_batch_in[:,i,:] #get the input for this window
-            #state_batch_reset = tf.nn.relu(cur_state) if c.MAX_TO_0_EACH_STEP else cur_state #reset the energies of the previous state. (introduce E b/c energy goes down when used for inhibition)
+            
             state_batch_in = tf.tensordot(curr_batch_input, weights_in, axes=([1],[2])) #dense layer to state input
             if c.BIAS_ON_INPUT:
                 state_batch_in = state_batch_in + biases_in
             if c.CLIP_NEURONS_TO_NEG1_AND_1: #state_batch in never needs to be > 2 or <-2 in this case
                 state_batch_in = 2.0*tf.nn.tanh(state_batch_in)
-
             
             cur_state = tf.nn.relu(cur_state) if c.MAX_TO_0_EACH_STEP else cur_state #reset energries if necessary
             cur_state = cur_state + state_batch_in #new state given input E

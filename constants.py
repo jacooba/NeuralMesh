@@ -71,7 +71,7 @@ BENCHMARK_STOCHASTIC = True #wehther benchmark FF model is stochastic (leave fal
 #... will need to confirm on GD plots... may just be *coincidence*
 
 
-#50 is default
+#30 is default for SGD, 50 is default for GD 
 NUM_EPOCHS = 30 #50 #100
 SUMMARY_FREQ = 10 #in epochs
 SAVE_FREQ = 25
@@ -80,7 +80,7 @@ SAVE_FREQ = 25
 USE_INPUT_AS_RESIDUAL = False #whether the window should keep looking at the orinigal image seen.
 RESIDUAL_VEC = [0.0 for _ in range(IMG_VEC_SZ)] #if ^^^ is false, the inputs seen by the mesh for all the windows after the first
 
-#defualt for this these architectural params / booleans is ALL FALSE!
+#defualt for this these architectural params / booleans is ALL FALSE! (all these were tuned on GD, which was old default before starting the paper)
 # ***they were chosen / tuned, however, with 100 epoch and 20x20 and window 10 [10x20x20] (not deault values for those params!)
 #all false works wonders like (94, 92)! -> max(97,94)-pic, bias(94,92), maxbias(96,94)
 #norm, clip, deplete all together doesnt work (this is what i really want)
@@ -105,7 +105,7 @@ ABS_APPROX = True #whether to approx absolute value to a more differentiable app
 EPS = 0.0001 #the eps used in computing the differentiabl approx of functions (abs and division)
 #^bench marking seems to be pretty sensitive to the above.
 
-#note, in the "clip" case, 1) MANNUAL_SIGMOID_FOR_DISPLAY will be ignore and 2) IMSHOW_NORM_FOR_DISPLAY should probs be false
+#note, in the "clip" case, normalization will be done by scaling, so 1) MANNUAL_SIGMOID_FOR_DISPLAY will be ignore and 2) IMSHOW_NORM_FOR_DISPLAY should probs be false
 #unlikely you want both? likely you want one if you arent clippin?
 #although, having it clip to [0,1] does produce some nice effects, although just shows small pos energies
 MANNUAL_SIGMOID_FOR_DISPLAY = True #wether to use sigmoid to scale for images
